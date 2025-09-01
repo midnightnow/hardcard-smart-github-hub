@@ -1,0 +1,317 @@
+# Claude Flow Integration for HardCard Smart GitHub Hub
+# Multi-agent workflow for intelligent GitHub uploads
+
+name: smart-github-upload-workflow
+version: 1.0.0
+description: Automated GitHub upload with intelligent chunking and optimization
+
+agents:
+  - name: repository-analyzer
+    role: Analyze repositories for optimization opportunities
+    capabilities:
+      - File type detection and classification
+      - Size analysis and large file detection
+      - Git repository structure understanding
+      - Compression opportunity identification
+    actions:
+      - analyze_repository_structure
+      - detect_large_files
+      - recommend_optimizations
+      - calculate_upload_strategy
+
+  - name: chunk-orchestrator
+    role: Create and manage intelligent file chunks
+    capabilities:
+      - Dynamic chunk size calculation
+      - Network-aware chunk optimization
+      - Parallel upload coordination
+      - Checksum verification
+    actions:
+      - create_smart_chunks
+      - optimize_chunk_sizes
+      - coordinate_parallel_uploads
+      - verify_chunk_integrity
+
+  - name: network-optimizer
+    role: Monitor and adapt to network conditions
+    capabilities:
+      - Real-time network speed detection
+      - Adaptive throttling
+      - Bandwidth optimization
+      - Connection stability monitoring
+    actions:
+      - detect_network_speed
+      - adjust_chunk_sizes
+      - optimize_parallelism
+      - handle_connection_issues
+
+  - name: github-api-coordinator
+    role: Manage GitHub API interactions
+    capabilities:
+      - Rate limit management
+      - API error handling
+      - Repository creation and management
+      - Authentication handling
+    actions:
+      - manage_rate_limits
+      - handle_api_errors
+      - create_repositories
+      - upload_chunks_to_github
+
+  - name: session-manager
+    role: Handle upload sessions and recovery
+    capabilities:
+      - Session persistence
+      - Progress tracking
+      - Failure recovery
+      - Resume functionality
+    actions:
+      - create_upload_session
+      - save_session_state
+      - resume_interrupted_upload
+      - track_upload_progress
+
+  - name: monitor-agent
+    role: Monitor system-wide Git operations
+    capabilities:
+      - Process monitoring
+      - File system watching
+      - Git hook integration
+      - User notifications
+    actions:
+      - monitor_git_operations
+      - detect_large_pushes
+      - notify_smart_upload_needed
+      - track_system_activity
+
+workflow:
+  initialization:
+    - step: 1
+      agent: monitor-agent
+      action: monitor_git_operations
+      input: system_watch_paths
+      output: detected_operations
+      continuous: true
+
+  upload_flow:
+    - step: 1
+      agent: repository-analyzer
+      action: analyze_repository_structure
+      input: repository_path
+      output: repository_analysis
+      
+    - step: 2
+      agent: repository-analyzer
+      action: recommend_optimizations
+      input: repository_analysis
+      output: optimization_recommendations
+      
+    - step: 3
+      agent: network-optimizer
+      action: detect_network_speed
+      input: network_test_params
+      output: network_profile
+      
+    - step: 4
+      agent: chunk-orchestrator
+      action: create_smart_chunks
+      input:
+        - repository_analysis
+        - network_profile
+        - optimization_recommendations
+      output: chunk_list
+      
+    - step: 5
+      agent: session-manager
+      action: create_upload_session
+      input:
+        - chunk_list
+        - repository_info
+      output: session_id
+      
+    - step: 6
+      agent: github-api-coordinator
+      action: create_repositories
+      input: repository_name
+      output: github_repo_info
+      condition: if_not_exists
+      
+    - step: 7
+      agent: chunk-orchestrator
+      action: coordinate_parallel_uploads
+      input:
+        - chunk_list
+        - session_id
+        - network_profile
+      output: upload_tasks
+      parallel: true
+      
+    - step: 8
+      agent: github-api-coordinator
+      action: upload_chunks_to_github
+      input:
+        - upload_tasks
+        - github_repo_info
+      output: upload_results
+      retry_on_failure: 3
+      handle_rate_limits: true
+      
+    - step: 9
+      agent: session-manager
+      action: track_upload_progress
+      input:
+        - session_id
+        - upload_results
+      output: progress_report
+      continuous: true
+      
+    - step: 10
+      agent: chunk-orchestrator
+      action: verify_chunk_integrity
+      input: upload_results
+      output: verification_report
+      
+  recovery_flow:
+    - step: 1
+      agent: session-manager
+      action: resume_interrupted_upload
+      input: session_id
+      output: resumed_session
+      
+    - step: 2
+      agent: network-optimizer
+      action: detect_network_speed
+      input: network_test_params
+      output: current_network_profile
+      
+    - step: 3
+      agent: chunk-orchestrator
+      action: optimize_chunk_sizes
+      input:
+        - resumed_session
+        - current_network_profile
+      output: optimized_chunks
+      
+    - step: 4
+      continue_from: upload_flow.step_7
+      
+error_handling:
+  - error_type: RateLimitException
+    handler: github-api-coordinator
+    action: manage_rate_limits
+    strategy: exponential_backoff
+    
+  - error_type: NetworkTimeout
+    handler: network-optimizer
+    action: handle_connection_issues
+    strategy: retry_with_smaller_chunks
+    
+  - error_type: ChunkUploadFailure
+    handler: session-manager
+    action: save_session_state
+    strategy: mark_for_retry
+    
+  - error_type: AuthenticationError
+    handler: github-api-coordinator
+    action: refresh_authentication
+    strategy: prompt_user
+
+monitoring:
+  metrics:
+    - upload_speed_mbps
+    - chunk_success_rate
+    - api_rate_limit_usage
+    - network_adaptation_events
+    - session_recovery_count
+    
+  alerts:
+    - condition: upload_speed_mbps < 0.5
+      message: "Slow upload detected, optimizing chunks"
+      action: adjust_chunk_sizes
+      
+    - condition: api_rate_limit_usage > 80
+      message: "Approaching API rate limit"
+      action: throttle_requests
+      
+    - condition: chunk_success_rate < 90
+      message: "High failure rate detected"
+      action: analyze_failure_pattern
+
+configuration:
+  default_chunk_size_mb: 5
+  max_chunk_size_mb: 50
+  min_chunk_size_mb: 1
+  parallel_uploads: 3
+  max_retries: 3
+  rate_limit_buffer: 20
+  network_test_interval_seconds: 60
+  session_persistence_path: ~/.hardcard-hub/sessions
+  
+  network_profiles:
+    slow:
+      chunk_size_mb: 1
+      parallel_uploads: 1
+      retry_delay_seconds: 5
+      
+    medium:
+      chunk_size_mb: 5
+      parallel_uploads: 2
+      retry_delay_seconds: 3
+      
+    fast:
+      chunk_size_mb: 10
+      parallel_uploads: 3
+      retry_delay_seconds: 2
+      
+    ultra:
+      chunk_size_mb: 25
+      parallel_uploads: 4
+      retry_delay_seconds: 1
+
+integration:
+  git_hooks:
+    - pre-push: check_large_files
+    - post-commit: analyze_repository_size
+    
+  cli_commands:
+    - git-smart: smart_push_wrapper
+    - hardcard-upload: direct_upload_command
+    
+  system_services:
+    - hardcard-monitor: background_monitoring_service
+    
+  ide_plugins:
+    - vscode: hardcard.smart-github-hub
+    - jetbrains: com.hardcard.github-hub
+
+deployment:
+  environments:
+    - development:
+        log_level: debug
+        dry_run: true
+        
+    - staging:
+        log_level: info
+        dry_run: false
+        test_mode: true
+        
+    - production:
+        log_level: warning
+        dry_run: false
+        monitoring_enabled: true
+
+# Claude Flow Execution Commands
+execution:
+  start: |
+    claudeflow execute --workflow smart-github-upload-workflow \
+      --input repository_path=/path/to/repo \
+      --config production
+      
+  resume: |
+    claudeflow resume --session {session_id} \
+      --workflow smart-github-upload-workflow
+      
+  monitor: |
+    claudeflow monitor --workflow smart-github-upload-workflow \
+      --metrics upload_speed,success_rate \
+      --interval 5s
